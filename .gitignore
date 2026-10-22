@@ -5,6 +5,7 @@ build/
 # local tooling caches
 .cache/
 .devdata/
+.mygo-update-keys/
 
 # rendered screenshots from tests
 artifacts/

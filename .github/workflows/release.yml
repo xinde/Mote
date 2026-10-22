@@ -36,8 +36,27 @@ jobs:
           echo "tag=$TAG version=$version"
           test "$TAG" = "v$version"
 
-      - name: Build
-        run: go tool mygo build -platform darwin/universal
+      - name: Build and upload signed update files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          test -n "$MYGO_UPDATER_PRIVATE_KEY" || {
+            echo "MYGO_UPDATER_PRIVATE_KEY is required" >&2
+            exit 1
+          }
+          if is_draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            test "$is_draft" = "true" || {
+              echo "Refusing to overwrite published release $TAG" >&2
+              exit 1
+            }
+          fi
+          go tool mygo build -platform darwin/universal -upload
+          version="$(jq -r .version mygo.json)"
+          test -s "build/darwin-universal/Mote $version.dmg"
+          test -s "build/darwin-universal/mote-$version-darwin-universal.tar.gz"
+          test -s build/darwin-universal/update-darwin-universal.json
 
       - name: Keep the build for troubleshooting
         uses: actions/upload-artifact@v7
@@ -64,15 +83,6 @@ jobs:
           Mote lives in the menu bar: click the note icon, or press
           ⇧⌘M from anywhere.
           EOF
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            # A re-run, such as after a moved tag, replaces the files.
-            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber build/*/*.dmg
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
-              --title "Mote $version" --notes-file "$RUNNER_TEMP/notes.md"
-          else
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "Mote $version" \
-              --notes-file "$RUNNER_TEMP/notes.md" \
-              build/*/*.dmg
-          fi
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --draft=false --latest \
+            --title "Mote $version" --notes-file "$RUNNER_TEMP/notes.md"

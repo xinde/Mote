@@ -1,8 +1,12 @@
 {
   "name": "Mote",
   "identifier": "dev.tthd.mote",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "out": "build",
+  "updates": {
+    "publicKey": "KirzUxWqm3KERiTX5P3uKQErrcmttEczefaR2vTHhh4=",
+    "github": "xinde/Mote"
+  },
   "macos": {
     "infoPlist": {
       "LSUIElement": true

@@ -19,6 +19,8 @@ xattr -dr com.apple.quarantine /Applications/Mote.app
 
 启动后没有 Dock 图标，请点击菜单栏的便签图标，或按 `⇧⌘M`。
 
+安装后点击窗口左上角的 **Mote** 标题即可从 GitHub 检查更新。有新版本时会验签、下载、替换并重新启动；没有更新时会显示提示。
+
 ## 功能
 
 ### Markdown 记录
@@ -32,7 +34,7 @@ xattr -dr com.apple.quarantine /Applications/Mote.app
 - 底部状态显示保存结果，点击状态可复制完整数据库路径，悬停显示路径
 - 状态后的信息图标悬停显示快捷键
 - `删除` 按钮删除当前记录，删除前会二次确认，确认框默认取消
-- `钉住` 让窗口保持最前，切到别的 App 也不收起，编辑与自动保存照常
+- `钉住` 弹出一个可移动、可缩放的独立窗口，始终浮在其他 App 之上；编辑、预览与自动保存照常，移开它就不会挡住内容
 
 ### 极简番茄钟
 
@@ -43,6 +45,7 @@ xattr -dr com.apple.quarantine /Applications/Mote.app
 - 运行时菜单栏显示固定宽度的等宽倒计时图像，数字变化不会造成抖动
 - 收起窗口后仍以绝对截止时间计时，系统休眠不会造成累计漂移
 - 完成后播放轻声双音并发送系统通知
+- 可选 `完成提示`：打开后专注结束会把当前窗口铺满屏幕，用半透明毛玻璃背景显示提示，菜单栏仍可见（默认关闭，只发通知。）
 - SQLite 只记录完成阶段、时长和时间，界面只显示今天完成的专注次数
 - 应用重启后恢复运行中或暂停中的计时状态
 
@@ -77,13 +80,15 @@ go run icon/gen.go -o resources/icon.png
 
 ## 自动发布
 
-`.github/workflows/release.yml` 在推送 `v*` 标签时工作：先校验标签与 `mygo.json` 的 `version` 一致，再构建 macOS 通用包，最后创建 GitHub Release 并附上磁盘映像。标签与版本不一致时不会发布。
+`.github/workflows/release.yml` 在推送 `v*` 标签时工作：先校验标签与 `mygo.json` 的 `version` 一致，再构建 macOS 通用包，最后创建 GitHub Release，并附上磁盘映像、签名更新归档、增量包与更新清单。标签与版本不一致时不会发布。
 
 ```sh
-# 先改 mygo.json 与 main.go 里的版本，再打标签
+# 先改 mygo.json 里的版本，再打标签
 git tag v0.4.0
 git push origin v0.4.0
 ```
+
+自动更新使用 MyGo 的 Ed25519 签名。仓库 Secret `MYGO_UPDATER_PRIVATE_KEY` 必须保存与 `mygo.json` 中公钥配对的私钥；私钥不能提交到 Git。发布工作流会先上传归档和增量包，最后上传清单，再公开 Release，避免客户端读取到不完整的更新。
 
 `.github/workflows/ci.yml` 在推送到 `main` 和每个 PR 上运行测试、`go vet`、MyGo 的 UI vet 和构建。
 

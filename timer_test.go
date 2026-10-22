@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/ui"
 )
 
 func TestTimerFormattingAndProgress(t *testing.T) {
@@ -150,5 +152,101 @@ func TestTimerStateAndCompletionsPersist(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("today focus count %d, want 1", count)
+	}
+}
+
+func TestAlertSettingRoundTrips(t *testing.T) {
+	st, err := openMemoryStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	ctx := context.Background()
+
+	state := defaultTimerState()
+	if state.Alert {
+		t.Fatal("the alert is on by default")
+	}
+	state.Alert = true
+	if err := st.SaveTimerState(ctx, state); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := st.LoadTimerState(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.Alert {
+		t.Fatal("the alert setting did not survive saving")
+	}
+}
+
+func TestAlertOnlyAfterFocus(t *testing.T) {
+	s := newApp(&store{path: ":memory:"}, note{}, nil, defaultTimerState(), 0)
+	if s.alertWanted(timerFocus) || s.alertWanted(timerBreak) {
+		t.Fatal("the alert is wanted while it is switched off")
+	}
+	s.timer.Alert = true
+	if !s.alertWanted(timerFocus) {
+		t.Fatal("the alert is not wanted after a focus session")
+	}
+	if s.alertWanted(timerBreak) {
+		t.Fatal("the alert is wanted after a break, which would interrupt")
+	}
+}
+
+func TestFinishFocusPhaseMovesToBreakAndCounts(t *testing.T) {
+	st, err := openMemoryStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	s := newApp(st, note{}, nil, defaultTimerState(), 0)
+	s.timer.Status = timerActive
+	s.timer.EndsAt = time.Now().Add(-time.Second)
+
+	s.finishTimerPhase(timerFocus, 25*60)
+
+	if s.timer.Phase != timerBreak || s.timer.Status != timerIdle {
+		t.Fatalf("timer after focus: %#v", s.timer)
+	}
+	if s.todayPomodoros != 1 {
+		t.Fatalf("today count %d, want 1", s.todayPomodoros)
+	}
+	if s.timer.RemainingSecs != s.timer.BreakMinutes*60 {
+		t.Fatalf("remaining %d, want the break length", s.timer.RemainingSecs)
+	}
+	count, err := st.TodayPomodoros(context.Background(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("recorded %d sessions, want 1", count)
+	}
+}
+
+func TestAlertSettingTogglesInTheView(t *testing.T) {
+	st, err := openMemoryStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	s := newApp(st, note{}, nil, defaultTimerState(), 0)
+	s.section = 1
+	tester := ui.NewTester(s.view, 420, 480)
+
+	if !tester.HasText("专注结束时弹窗提示") {
+		t.Fatalf("timer view does not offer the alert; texts: %q", tester.Texts())
+	}
+	if err := tester.Click("完成提示"); err != nil {
+		t.Fatal(err)
+	}
+	if !s.timer.Alert {
+		t.Fatal("clicking the switch did not turn the alert on")
+	}
+	if err := tester.Click("完成提示"); err != nil {
+		t.Fatal(err)
+	}
+	if s.timer.Alert {
+		t.Fatal("clicking the switch again did not turn it off")
 	}
 }

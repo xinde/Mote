@@ -67,22 +67,35 @@ type app struct {
 	timerDeadline   *time.Timer
 	timerTickerStop chan struct{}
 
-	currentID     int64
-	draft         string
-	savedText     string
-	lastSavedAt   time.Time
-	recent        []noteSummary
-	recentChoice  string
-	viewMode      int
-	phase         savePhase
-	statusDetail  string
-	revision      uint64
-	savePending   bool
-	quitAfterSave bool
-	confirmDelete bool
-	pinned        bool
-	autoSaveTimer *time.Timer
-	quitting      bool
+	currentID         int64
+	draft             string
+	savedText         string
+	lastSavedAt       time.Time
+	recent            []noteSummary
+	recentChoice      string
+	viewMode          int
+	phase             savePhase
+	statusDetail      string
+	revision          uint64
+	savePending       bool
+	quitAfterSave     bool
+	relaunchAfterSave bool
+	confirmDelete     bool
+	pinned            bool
+	pinWin            *mygo.Window
+	pinEditor         ui.Handle
+	pinMode           int
+	pinPlaced         bool
+	alertOpen         bool
+	alertWindow       *mygo.Window
+	alertRestore      mygo.Rectangle
+	alertWasHidden    bool
+	autoSaveTimer     *time.Timer
+	quitting          bool
+	updatePhase       updatePhase
+	updateVersion     string
+	updateProgress    int
+	toast             string
 }
 
 func newApp(st *store, current note, recent []noteSummary, timer timerState, todayPomodoros int) *app {
@@ -117,8 +130,15 @@ func newApp(st *store, current note, recent []noteSummary, timer timerState, tod
 }
 
 func (s *app) view(c *ui.Context) {
+	if s.alertOpen {
+		s.alertScreen(c)
+		return
+	}
 	c.SetTheme(warmTheme(c.Theme().Dark))
 	t := c.Theme()
+	if s.pinWin == nil || !s.pinWin.IsVisible() {
+		s.showPendingToast(c)
+	}
 
 	if c.Shortcut(0, ui.KeyEscape) || c.Shortcut(ui.Cmd, ui.KeyW) {
 		s.dismiss()
@@ -130,10 +150,35 @@ func (s *app) view(c *ui.Context) {
 
 	ui.Column(c).Fill().Background(t.Background).Padding(16).Gap(12).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
-			ui.Column(c).Grow(1).Gap(2).Children(func() {
-				ui.Text(c, "Mote").Font("New York").FontSize(20).Bold()
-				ui.Text(c, "记录想法，也留一段专注时间").FontSize(11).TextColor(t.TextMuted)
+			brand := ui.Column(c.Key("update-check")).Grow(1).Gap(2).
+				Focusable().
+				Role(ui.RoleButton).
+				Label("检查 Mote 更新").
+				Description("点击从 GitHub 检查并安装新版本").
+				Tooltip("检查更新").
+				Cursor(ui.CursorPointer)
+			brand.Children(func() {
+				ui.Row(c).AlignItems(ui.Center).Gap(7).Children(func() {
+					ui.Text(c, "Mote").Font("New York").FontSize(20).Bold()
+					if s.updatePhase != updateIdle {
+						ui.Spinner(c).Size(12, 12).TextColor(t.TextMuted).Label("正在更新 Mote")
+					}
+				})
+				detail := "记录想法，也留一段专注时间"
+				if updateStatus := s.updateStatusText(); updateStatus != "" {
+					detail = updateStatus
+				}
+				ui.Text(c, detail).FontSize(11).TextColor(t.TextMuted).
+					ContentTransition(ui.ContentTransition{Numeric: true, Animation: &ui.Animation{Duration: 140 * time.Millisecond, Ease: ui.EaseOut}})
 			})
+			pose := ui.Pose{}
+			if brand.Pressed() {
+				pose.Scale = 0.97
+			}
+			brand.AnimatePose(pose, ui.Animation{Duration: 120 * time.Millisecond, Ease: ui.EaseOut})
+			if brand.Clicked() || brand.Shortcut(0, ui.KeyEnter) || brand.Shortcut(0, ui.KeySpace) {
+				s.checkForUpdate()
+			}
 			ui.Tabs(c.Key("section"), &s.section, "记录", "专注").
 				Label("Mote 功能")
 		})
@@ -310,6 +355,7 @@ func warmTheme(dark bool) *ui.Theme {
 }
 
 func (s *app) draftChanged() {
+	defer s.refresh()
 	s.revision++
 	s.statusDetail = ""
 	if s.draft == s.savedText {
@@ -329,7 +375,7 @@ func (s *app) scheduleSave() {
 		s.autoSaveTimer.Stop()
 	}
 	s.autoSaveTimer = time.AfterFunc(autoSaveWait, func() {
-		s.win.Update(s.startSave)
+		s.update(s.startSave)
 	})
 }
 
@@ -363,7 +409,7 @@ func (s *app) startSave() {
 		if err == nil {
 			recent, err = s.store.Recent(context.Background(), 12)
 		}
-		s.win.Update(func() { s.finishSave(rev, draft, saved, recent, err) })
+		s.update(func() { s.finishSave(rev, draft, saved, recent, err) })
 	}()
 }
 
@@ -373,9 +419,15 @@ func (s *app) finishSave(rev uint64, draft string, saved note, recent []noteSumm
 		s.statusDetail = "数据库写入失败"
 		log.Println("save note:", err)
 		if s.quitAfterSave {
+			relaunch := s.relaunchAfterSave
 			s.quitAfterSave = false
-			s.quitting = true
-			mygo.App.Quit()
+			s.relaunchAfterSave = false
+			if relaunch {
+				s.updatePhase = updateIdle
+				s.toast = "新版本已安装，但记录保存失败；请稍后重新打开 Mote"
+			} else {
+				s.toast = "记录保存失败，已取消退出"
+			}
 		}
 		return
 	}
@@ -392,13 +444,19 @@ func (s *app) finishSave(rev uint64, draft string, saved note, recent []noteSumm
 	}
 
 	if s.quitAfterSave {
-		s.quitAfterSave = false
 		if s.phase == phaseDirty {
 			s.startSave()
 			return
 		}
+		relaunch := s.relaunchAfterSave
+		s.quitAfterSave = false
+		s.relaunchAfterSave = false
 		s.quitting = true
-		mygo.App.Quit()
+		if relaunch {
+			mygo.App.Relaunch()
+		} else {
+			mygo.App.Quit()
+		}
 		return
 	}
 	if s.savePending || s.phase == phaseDirty {
@@ -411,6 +469,7 @@ func (s *app) finishSave(rev uint64, draft string, saved note, recent []noteSumm
 // to a fresh record, so a deleted note cannot be written back by a pending
 // autosave.
 func (s *app) deleteCurrent() {
+	defer s.refresh()
 	id := s.currentID
 	if id == 0 {
 		return
@@ -443,6 +502,7 @@ func (s *app) deleteCurrent() {
 }
 
 func (s *app) newDraft() {
+	defer s.refresh()
 	if s.phase == phaseDirty || s.phase == phaseSaving {
 		return
 	}
@@ -483,6 +543,7 @@ func (s *app) choiceForID(id int64) string {
 }
 
 func (s *app) loadChoice(choice string) {
+	defer s.refresh()
 	if choice == "新记录" {
 		s.newDraft()
 		return
@@ -510,26 +571,74 @@ func (s *app) loadChoice(choice string) {
 	}
 }
 
-// hidesWhenUnfocused reports whether losing focus hides the window: one the
-// user pinned stays where they put it, over the app they switch to.
-func (s *app) hidesWhenUnfocused() bool { return !s.pinned }
-
-// applyPinned reflects the pinned state in the window's title, which Mission
-// Control and the Window menu show.
+// applyPinned opens or closes the pinned window: a window of its own, which
+// the user can move out of the way, that stays above the other apps.
 func (s *app) applyPinned() {
-	if s.win == nil {
+	if s.pinWin == nil {
 		return
 	}
 	if s.pinned {
-		s.win.SetTitle(appName + " · 已钉住")
+		if !s.pinPlaced {
+			s.placePinned()
+			s.pinPlaced = true
+		} else {
+			s.pinWin.SetBounds(visibleWindowBounds(s.pinWin.Bounds()))
+		}
+		s.pinWin.Show()
+		s.pinWin.Focus()
+		s.pinEditor.Focus()
+		if s.win.IsVisible() {
+			s.win.Hide()
+		}
 		return
 	}
-	s.win.SetTitle(appName)
+	s.pinWin.Hide()
+}
+
+// placePinned puts a new pinned window near the top right of the main screen,
+// where it covers little until the user drags it.
+func (s *app) placePinned() {
+	area := mygo.Screen.PrimaryDisplay().WorkArea
+	bounds := s.pinWin.Bounds()
+	x := area.X + area.Width - bounds.Width - 24
+	y := area.Y + 24
+	s.pinWin.SetPosition(
+		max(area.X, min(x, area.X+max(0, area.Width-bounds.Width))),
+		max(area.Y, min(y, area.Y+max(0, area.Height-bounds.Height))),
+	)
+}
+
+// unpin closes the pinned window and leaves the pin off in the panel.
+func (s *app) unpin() {
+	s.pinned = false
+	s.applyPinned()
+	s.refresh()
+}
+
+// refresh redraws both windows after a change of the state they share.
+func (s *app) refresh() {
+	if s.win != nil {
+		s.win.Invalidate()
+	}
+	if s.pinWin != nil && s.pinWin.IsVisible() {
+		s.pinWin.Invalidate()
+	}
+}
+
+// update runs fn on the main thread, where the views build, and redraws both
+// windows: they show the same draft.
+func (s *app) update(fn func()) {
+	if s.win == nil {
+		fn()
+		return
+	}
+	s.win.Update(func() {
+		fn()
+		s.refresh()
+	})
 }
 
 func (s *app) dismiss() {
-	s.pinned = false
-	s.applyPinned()
 	if s.phase == phaseDirty {
 		s.saveNow()
 	}
@@ -537,6 +646,11 @@ func (s *app) dismiss() {
 }
 
 func (s *app) show() {
+	if s.alertOpen && s.alertWindow != nil {
+		s.alertWindow.Show()
+		s.alertWindow.Focus()
+		return
+	}
 	anchor := s.tray.Bounds()
 	if anchor.Width == 0 || anchor.Height == 0 {
 		s.win.Center()
@@ -562,6 +676,11 @@ func (s *app) show() {
 }
 
 func (s *app) toggle() {
+	if s.alertOpen && s.alertWindow != nil {
+		s.alertWindow.Show()
+		s.alertWindow.Focus()
+		return
+	}
 	if s.win.IsVisible() {
 		s.dismiss()
 		return
@@ -595,13 +714,40 @@ func (s *app) ready() {
 		AlwaysOnTop:       true,
 		SkipTaskbar:       true,
 		BackgroundColor:   "light-dark(#fbf7ea, #24211c)",
+		Transparent:       true,
+		Vibrancy:          mygo.VibrancyHUD,
 		Content:           ui.View(s.view),
 	})
 
 	s.win.OnBlur(func() {
-		if s.hidesWhenUnfocused() {
-			s.dismiss()
+		if s.alertOpen && s.alertWindow == s.win {
+			return
 		}
+		s.dismiss()
+	})
+
+	s.pinWin = mygo.NewWindow(mygo.WindowOptions{
+		Title:             appName + " · 钉住",
+		Width:             420,
+		Height:            480,
+		MinWidth:          340,
+		MinHeight:         280,
+		Hidden:            true,
+		AlwaysOnTop:       true,
+		DisableMinimize:   true,
+		DisableFullScreen: true,
+		SkipTaskbar:       true,
+		BackgroundColor:   "light-dark(#fbf7ea, #24211c)",
+		Transparent:       true,
+		Vibrancy:          mygo.VibrancyHUD,
+		Content:           ui.View(s.pinnedView),
+	})
+	s.pinWin.OnClose(func(e *mygo.CloseEvent) {
+		if s.quitting {
+			return
+		}
+		e.PreventDefault()
+		s.unpin()
 	})
 	s.win.OnClose(func(e *mygo.CloseEvent) {
 		if !s.quitting {
@@ -667,7 +813,6 @@ func trayIcon() []byte {
 
 func main() {
 	mygo.App.SetName(appName)
-	mygo.App.SetVersion("0.5.0")
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 
 	st, err := openStore()
@@ -696,8 +841,13 @@ func main() {
 	}
 	s := newApp(st, current, recent, timer, todayPomodoros)
 	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
-		needsSave := s.phase == phaseDirty || s.phase == phaseSaving
-		if !s.quitting && needsSave {
+		if !s.quitting && s.updatePhase == updateInstalling {
+			e.PreventDefault()
+			s.toast = "正在安装更新，请稍候"
+			s.refresh()
+			return
+		}
+		if !s.quitting && s.hasUnsavedDraft() {
 			e.PreventDefault()
 			s.quitAfterSave = true
 			if s.phase != phaseSaving {

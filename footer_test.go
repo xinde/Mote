@@ -200,19 +200,68 @@ func TestDeleteButtonAsksBeforeRemoving(t *testing.T) {
 	}
 }
 
-func TestPinKeepsTheWindowWhenFocusLeaves(t *testing.T) {
+func TestPinTogglesAndUnpinClearsIt(t *testing.T) {
 	s := newApp(&store{path: ":memory:"}, note{ID: 1, Markdown: "# 钉住"}, nil, defaultTimerState(), 0)
 	tester := ui.NewTester(s.view, 460, 540)
 
-	if !s.hidesWhenUnfocused() {
-		t.Fatal("the window hides on blur before pinning")
+	if s.pinned {
+		t.Fatal("pinned before anything was clicked")
 	}
 	if err := tester.Click("钉住"); err != nil {
 		t.Fatal(err)
 	}
-	if !s.pinned || s.hidesWhenUnfocused() {
-		t.Fatalf("pinned=%v hides=%v after pinning", s.pinned, s.hidesWhenUnfocused())
+	if !s.pinned {
+		t.Fatal("clicking 钉住 did not turn the pin on")
 	}
+	if err := tester.Click("钉住"); err != nil {
+		t.Fatal(err)
+	}
+	if s.pinned {
+		t.Fatal("clicking 钉住 again did not turn the pin off")
+	}
+
+	// unpin runs from the pinned window and from the panel, so it must cope
+	// with the window not existing yet.
+	s.pinned = true
+	s.unpin()
+	if s.pinned {
+		t.Fatal("unpin left the pin on")
+	}
+}
+
+func TestPinnedWindowShowsTheDraftAndEditsIt(t *testing.T) {
+	draft := "# 钉住\n\n同一份草稿"
+	s := newApp(&store{path: ":memory:"}, note{ID: 2, Markdown: draft}, nil, defaultTimerState(), 0)
+	tester := ui.NewTester(s.pinnedView, 420, 480)
+
+	for _, want := range []string{"编辑", "预览", "取消钉住", "已保存", "自动保存"} {
+		if !tester.HasText(want) {
+			t.Errorf("pinned window missing %q; texts: %q", want, tester.Texts())
+		}
+	}
+	if err := tester.Click("预览"); err != nil {
+		t.Fatal(err)
+	}
+	if !tester.HasText("同一份草稿") {
+		t.Fatalf("preview does not show the draft; texts: %q", tester.Texts())
+	}
+	if err := tester.Click("编辑"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tester.Click("Markdown 内容"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Type("补一句")
+	if s.autoSaveTimer != nil {
+		s.autoSaveTimer.Stop()
+	}
+	if s.draft == draft {
+		t.Fatalf("typing in the pinned window did not reach the shared draft: %q", s.draft)
+	}
+	if s.phase != phaseDirty {
+		t.Fatalf("phase %v after typing, want dirty so autosave runs", s.phase)
+	}
+
 	if output := os.Getenv("MOTE_PINNED_SCREENSHOT"); output != "" {
 		file, err := os.Create(output)
 		if err != nil {
@@ -225,11 +274,5 @@ func TestPinKeepsTheWindowWhenFocusLeaves(t *testing.T) {
 		if err := file.Close(); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if err := tester.Click("钉住"); err != nil {
-		t.Fatal(err)
-	}
-	if s.pinned || !s.hidesWhenUnfocused() {
-		t.Fatalf("pinned=%v hides=%v after unpinning", s.pinned, s.hidesWhenUnfocused())
 	}
 }

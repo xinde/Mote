@@ -34,6 +34,9 @@ type timerState struct {
 	RemainingSecs int       `json:"remainingSeconds"`
 	DurationSecs  int       `json:"durationSeconds"`
 	EndsAt        time.Time `json:"endsAt,omitempty"`
+	// Alert asks for a prompt over the window when a focus session ends. Off
+	// by default: the notification and the chime are enough.
+	Alert bool `json:"alert,omitempty"`
 }
 
 func defaultTimerState() timerState {
@@ -180,12 +183,21 @@ func (s *app) timerView(c *ui.Context) {
 		}
 
 		ui.Row(c).AlignSelf(ui.Stretch).AlignItems(ui.Center).Gap(8).Children(func() {
+			if ui.Switch(c.Key("alert"), &s.timer.Alert).
+				Label("完成提示").
+				Tooltip("专注结束时在窗口上弹出提示，而不只是发通知").
+				Changed() {
+				s.persistTimer()
+			}
+			ui.Text(c, "专注结束时弹窗提示").
+				FontSize(11).
+				TextColor(theme.TextMuted)
+			ui.Spacer(c)
 			if s.timer.Status != timerIdle {
 				if ui.Button(c, "重置").Clicked() {
 					s.resetTimer()
 				}
 			}
-			ui.Spacer(c)
 			label := "开始专注"
 			if s.timer.Phase == timerBreak {
 				label = "开始休息"
@@ -260,7 +272,7 @@ func (s *app) scheduleTimer() {
 		delay = 0
 	}
 	s.timerDeadline = time.AfterFunc(delay, func() {
-		s.win.Update(s.completeTimer)
+		s.update(s.completeTimer)
 	})
 	s.startTimerTicker()
 }
@@ -380,9 +392,18 @@ func (s *app) completeTimer() {
 		return
 	}
 	completedPhase := s.timer.Phase
-	completedDuration := s.timer.DurationSecs
-	s.stopTimerSchedule()
+	s.finishTimerPhase(completedPhase, s.timer.DurationSecs)
 
+	s.notifyTimerComplete(completedPhase)
+	if s.alertWanted(completedPhase) {
+		s.showTimerAlert()
+	}
+}
+
+// finishTimerPhase moves the timer to the other phase, records the session
+// that ended and saves the state, without telling the user about it.
+func (s *app) finishTimerPhase(completedPhase string, completedDuration int) {
+	s.stopTimerSchedule()
 	if completedPhase == timerFocus {
 		s.todayPomodoros++
 		s.timer.Phase = timerBreak
@@ -397,7 +418,13 @@ func (s *app) completeTimer() {
 	if err := s.store.RecordTimerCompletion(context.Background(), completedPhase, completedDuration, time.Now()); err != nil {
 		log.Println("record timer completion:", err)
 	}
-	s.notifyTimerComplete(completedPhase)
+	s.refresh()
+}
+
+// fullScreenAlertWanted reports whether the phase that ended asks for the
+// full-screen prompt: only a focus session, and only when it is switched on.
+func (s *app) alertWanted(completedPhase string) bool {
+	return completedPhase == timerFocus && s.timer.Alert
 }
 
 func (s *app) notifyTimerComplete(phase string) {
