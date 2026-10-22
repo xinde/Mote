@@ -1,0 +1,11 @@
+{
+  "name": "Mote",
+  "identifier": "dev.tthd.mote",
+  "version": "0.3.6",
+  "out": "build",
+  "macos": {
+    "infoPlist": {
+      "LSUIElement": true
+    }
+  }
+}

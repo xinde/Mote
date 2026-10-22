@@ -1,0 +1,13 @@
+# build output
+build/
+.mygo/
+
+# local tooling caches
+.cache/
+.devdata/
+
+# rendered screenshots from tests
+artifacts/
+
+# macOS
+.DS_Store
