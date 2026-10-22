@@ -80,6 +80,7 @@ type app struct {
 	savePending   bool
 	quitAfterSave bool
 	confirmDelete bool
+	pinned        bool
 	autoSaveTimer *time.Timer
 	quitting      bool
 }
@@ -212,10 +213,10 @@ func (s *app) noteView(c *ui.Context) {
 		if ui.Button(c, "新建").Disabled(!canStartNew).Tooltip("当前内容保存后可新建").Clicked() {
 			s.newDraft()
 		}
-		if ui.PrimaryButton(c, "立即保存").
-			Disabled(strings.TrimSpace(s.draft) == "" || s.phase == phaseSaving || s.phase == phaseSaved).
-			Clicked() {
-			s.saveNow()
+		if ui.Toggle(c, &s.pinned, "钉住").
+			Tooltip("保持窗口在最前，失焦也不收起").
+			Changed() {
+			s.applyPinned()
 		}
 		if ui.Button(c, "删除").
 			TextColor(t.Danger).
@@ -509,7 +510,26 @@ func (s *app) loadChoice(choice string) {
 	}
 }
 
+// hidesWhenUnfocused reports whether losing focus hides the window: one the
+// user pinned stays where they put it, over the app they switch to.
+func (s *app) hidesWhenUnfocused() bool { return !s.pinned }
+
+// applyPinned reflects the pinned state in the window's title, which Mission
+// Control and the Window menu show.
+func (s *app) applyPinned() {
+	if s.win == nil {
+		return
+	}
+	if s.pinned {
+		s.win.SetTitle(appName + " · 已钉住")
+		return
+	}
+	s.win.SetTitle(appName)
+}
+
 func (s *app) dismiss() {
+	s.pinned = false
+	s.applyPinned()
 	if s.phase == phaseDirty {
 		s.saveNow()
 	}
@@ -578,7 +598,11 @@ func (s *app) ready() {
 		Content:           ui.View(s.view),
 	})
 
-	s.win.OnBlur(s.dismiss)
+	s.win.OnBlur(func() {
+		if s.hidesWhenUnfocused() {
+			s.dismiss()
+		}
+	})
 	s.win.OnClose(func(e *mygo.CloseEvent) {
 		if !s.quitting {
 			e.PreventDefault()
@@ -643,7 +667,7 @@ func trayIcon() []byte {
 
 func main() {
 	mygo.App.SetName(appName)
-	mygo.App.SetVersion("0.4.0")
+	mygo.App.SetVersion("0.5.0")
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 
 	st, err := openStore()

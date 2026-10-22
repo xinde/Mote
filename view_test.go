@@ -23,7 +23,7 @@ func TestViewRendersEditorAndPreview(t *testing.T) {
 	if tester.HasText("关闭 Mote") || tester.HasText("×") {
 		t.Fatalf("header still shows a close control: %q", tester.Texts())
 	}
-	for _, text := range []string{"Mote", "记录", "专注", "编辑", "预览", "已保存 · 10:30", "立即保存"} {
+	for _, text := range []string{"Mote", "记录", "专注", "编辑", "预览", "已保存 · 10:30", "钉住"} {
 		if !tester.HasText(text) {
 			t.Errorf("editor view missing %q; texts: %q", text, tester.Texts())
 		}

@@ -49,16 +49,16 @@ func TestNotesFooterLayout(t *testing.T) {
 	if !ok {
 		t.Fatalf("new button not found; texts: %q", tester.Texts())
 	}
-	saveButton, ok := tester.Find("立即保存")
+	pinButton, ok := tester.Find("钉住")
 	if !ok {
-		t.Fatalf("save button not found; texts: %q", tester.Texts())
+		t.Fatalf("pin button not found; texts: %q", tester.Texts())
 	}
 	deleteButton, ok := tester.Find("删除")
 	if !ok {
 		t.Fatalf("delete button not found; texts: %q", tester.Texts())
 	}
 	rowCenter := status.Y + status.H/2
-	for name, button := range map[string]ui.Rect{"新建": newButton, "立即保存": saveButton, "删除": deleteButton} {
+	for name, button := range map[string]ui.Rect{"新建": newButton, "钉住": pinButton, "删除": deleteButton} {
 		if delta := button.Y + button.H/2 - rowCenter; delta < -4 || delta > 4 {
 			t.Fatalf("%s is on another row: status %#v, button %#v", name, status, button)
 		}
@@ -66,8 +66,8 @@ func TestNotesFooterLayout(t *testing.T) {
 	if status.X+status.W >= newButton.X {
 		t.Fatalf("status %#v overlaps the action row starting at %.1f", status, newButton.X)
 	}
-	if newButton.X >= saveButton.X || saveButton.X >= deleteButton.X {
-		t.Fatalf("action order is %v, %v, %v", newButton, saveButton, deleteButton)
+	if newButton.X >= pinButton.X || pinButton.X >= deleteButton.X {
+		t.Fatalf("action order is %v, %v, %v", newButton, pinButton, deleteButton)
 	}
 
 	icon, ok := tester.Find("快捷键信息")
@@ -197,5 +197,39 @@ func TestDeleteButtonAsksBeforeRemoving(t *testing.T) {
 	}
 	if len(recent) != 0 {
 		t.Fatalf("records left after delete: %#v", recent)
+	}
+}
+
+func TestPinKeepsTheWindowWhenFocusLeaves(t *testing.T) {
+	s := newApp(&store{path: ":memory:"}, note{ID: 1, Markdown: "# 钉住"}, nil, defaultTimerState(), 0)
+	tester := ui.NewTester(s.view, 460, 540)
+
+	if !s.hidesWhenUnfocused() {
+		t.Fatal("the window hides on blur before pinning")
+	}
+	if err := tester.Click("钉住"); err != nil {
+		t.Fatal(err)
+	}
+	if !s.pinned || s.hidesWhenUnfocused() {
+		t.Fatalf("pinned=%v hides=%v after pinning", s.pinned, s.hidesWhenUnfocused())
+	}
+	if output := os.Getenv("MOTE_PINNED_SCREENSHOT"); output != "" {
+		file, err := os.Create(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := png.Encode(file, tester.Image()); err != nil {
+			_ = file.Close()
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tester.Click("钉住"); err != nil {
+		t.Fatal(err)
+	}
+	if s.pinned || !s.hidesWhenUnfocused() {
+		t.Fatalf("pinned=%v hides=%v after unpinning", s.pinned, s.hidesWhenUnfocused())
 	}
 }

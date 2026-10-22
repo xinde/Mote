@@ -11,3 +11,6 @@ artifacts/
 
 # macOS
 .DS_Store
+
+# stray binaries from `go build`
+/mote
