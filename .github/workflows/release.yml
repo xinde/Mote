@@ -64,8 +64,15 @@ jobs:
           Mote lives in the menu bar: click the note icon, or press
           ⇧⌘M from anywhere.
           EOF
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Mote $version" \
-            --notes-file "$RUNNER_TEMP/notes.md" \
-            build/*/*.dmg
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # A re-run, such as after a moved tag, replaces the files.
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber build/*/*.dmg
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "Mote $version" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Mote $version" \
+              --notes-file "$RUNNER_TEMP/notes.md" \
+              build/*/*.dmg
+          fi
