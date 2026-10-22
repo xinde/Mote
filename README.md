@@ -2,7 +2,10 @@
 
 <img src="resources/icon.png" width="120" alt="Mote 图标">
 
-一个只使用 [MyGo](https://mygo.egoist.dev/docs) 原生组件实现的 macOS 菜单栏工具：随手写 Markdown，也随手开始一段专注计时。内容和计时记录都保存在本机 SQLite。
+一个只使用 [MyGo](https://mygo.egoist.dev/docs) 原生组件实现的 macOS 菜单栏工具：随手写 Markdown，也随手开始一段专注计时。极简记事本和番茄钟小工具。内容和计时记录都保存在本机 SQLite。
+
+> 为什么不用系统记事本和闹钟？
+> 因为够顺手，token用不完。ʕ•ᴥ•ʔ
 
 ## 安装
 
