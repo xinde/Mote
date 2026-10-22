@@ -1,0 +1,71 @@
+name: Release
+
+# Pushing a version tag builds the app and publishes a GitHub release with the
+# disk image. The tag must match the version in mygo.json, so a mistyped tag
+# publishes nothing.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and release, such as v0.3.6
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: macOS universal
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check the tag matches mygo.json
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          version="$(jq -r .version mygo.json)"
+          echo "tag=$TAG version=$version"
+          test "$TAG" = "v$version"
+
+      - name: Build
+        run: go tool mygo build -platform darwin/universal
+
+      - name: Keep the build for troubleshooting
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mote-macos-universal
+          path: build/*/*
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          version="$(jq -r .version mygo.json)"
+          cat > "$RUNNER_TEMP/notes.md" <<EOF
+          Mote $version for macOS 12 or later, on Apple silicon and Intel.
+
+          ## Install
+
+          1. Open the disk image and drag **Mote** into Applications.
+          2. The app is not notarized, so the first launch needs
+             right-click > Open, or
+             \`xattr -dr com.apple.quarantine /Applications/Mote.app\`.
+
+          Mote lives in the menu bar: click the note icon, or press
+          ⇧⌘M from anywhere.
+          EOF
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Mote $version" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            build/*/*.dmg

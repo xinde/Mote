@@ -643,7 +643,7 @@ func trayIcon() []byte {
 
 func main() {
 	mygo.App.SetName(appName)
-	mygo.App.SetVersion("0.3.6")
+	mygo.App.SetVersion("0.4.0")
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 
 	st, err := openStore()

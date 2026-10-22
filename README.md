@@ -2,6 +2,18 @@
 
 一个只使用 [MyGo](https://mygo.egoist.dev/docs) 原生组件实现的 macOS 菜单栏工具：随手写 Markdown，也随手开始一段专注计时。内容和计时记录都保存在本机 SQLite。
 
+## 安装
+
+从 [Releases](https://github.com/xinde/Mote/releases) 下载最新的磁盘映像，把 **Mote** 拖入“应用程序”。
+
+应用使用自签名（ad-hoc）构建，未经过 Apple 公证，所以首次启动需要右键点击图标选择“打开”，或执行：
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Mote.app
+```
+
+启动后没有 Dock 图标，请点击菜单栏的便签图标，或按 `⇧⌘M`。
+
 ## 功能
 
 ### Markdown 记录
@@ -45,10 +57,31 @@ MyGo CLI v0.5.5 已通过 `go.mod` 的 `tool` 指令固定。开发 App 启动�
 ## 构建
 
 ```sh
-go tool mygo build -skip-dmg
+go tool mygo build -skip-dmg          # 本机架构
+go tool mygo build -platform darwin/universal   # Apple 芯片 + Intel
 ```
 
-构建产物位于 `build/darwin-arm64/Mote.app`。若当前环境允许 `hdiutil` 创建磁盘映像，可去掉 `-skip-dmg` 同时生成 DMG。
+构建产物位于 `build/<平台>/`。生成的 `.app` 可以使用，但只有自签名。
+
+应用图标由 `icon/gen.go` 生成，输出到 `resources/icon.png`：
+
+```sh
+go run icon/gen.go -o resources/icon.png
+```
+
+## 自动发布
+
+`.github/workflows/release.yml` 在推送 `v*` 标签时工作：先校验标签与 `mygo.json` 的 `version` 一致，再构建 macOS 通用包，最后创建 GitHub Release 并附上磁盘映像。标签与版本不一致时不会发布。
+
+```sh
+# 先改 mygo.json 与 main.go 里的版本，再打标签
+git tag v0.4.0
+git push origin v0.4.0
+```
+
+`.github/workflows/ci.yml` 在推送到 `main` 和每个 PR 上运行测试、`go vet`、MyGo 的 UI vet 和构建。
+
+当前流程没有 Apple Developer ID 证书，因此产物未签名、未公证。若日后要正式分发，在 `mygo.json` 中配置 `macos.signingIdentity` 与 `macos.notarize`，并在仓库 Secrets 中加入证书与公证凭据。
 
 ## 数据与隐私
 

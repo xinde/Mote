@@ -1,7 +1,7 @@
 {
   "name": "Mote",
   "identifier": "dev.tthd.mote",
-  "version": "0.3.6",
+  "version": "0.4.0",
   "out": "build",
   "macos": {
     "infoPlist": {
