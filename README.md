@@ -1,5 +1,7 @@
 # Mote
 
+<img src="resources/icon.png" width="120" alt="Mote 图标">
+
 一个只使用 [MyGo](https://mygo.egoist.dev/docs) 原生组件实现的 macOS 菜单栏工具：随手写 Markdown，也随手开始一段专注计时。内容和计时记录都保存在本机 SQLite。
 
 ## 安装
