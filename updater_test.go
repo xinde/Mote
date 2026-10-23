@@ -2,10 +2,32 @@ package main
 
 import (
 	"errors"
+	"image/png"
+	"os"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
 )
+
+func TestUpdateHitTargetOnlyCoversMoteTitle(t *testing.T) {
+	s := newApp(&store{path: ":memory:"}, note{}, nil, defaultTimerState(), 0)
+	tester := ui.NewTester(s.view, 460, 540)
+
+	target, ok := tester.Find("检查 Mote 更新")
+	if !ok {
+		t.Fatalf("update target is missing: %q", tester.Texts())
+	}
+	if target.W > 80 || target.H > 32 {
+		t.Fatalf("update target is larger than the Mote title: %#v", target)
+	}
+	detail, ok := tester.Find("记录想法，也留一段专注时间")
+	if !ok {
+		t.Fatalf("header detail is missing: %q", tester.Texts())
+	}
+	if target.Y+target.H > detail.Y {
+		t.Fatalf("update target %#v overlaps non-clickable detail %#v", target, detail)
+	}
+}
 
 func TestUpdateProgressAppearsInHeader(t *testing.T) {
 	s := newApp(&store{path: "/tmp/mote-test.db"}, note{}, nil, defaultTimerState(), 0)
@@ -27,6 +49,19 @@ func TestUpdateProgressAppearsInHeader(t *testing.T) {
 	tester.SetSize(375, 440)
 	if !tester.HasText("正在升级到 Mote 0.7.0 · 42%") || !tester.HasText("记录") || !tester.HasText("专注") {
 		t.Fatalf("compact update header is incomplete: %q", tester.Texts())
+	}
+	if output := os.Getenv("MOTE_UPDATE_SCREENSHOT"); output != "" {
+		file, err := os.Create(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := png.Encode(file, tester.Image()); err != nil {
+			_ = file.Close()
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

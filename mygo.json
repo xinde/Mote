@@ -1,7 +1,7 @@
 {
   "name": "Mote",
   "identifier": "dev.tthd.mote",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "out": "build",
   "updates": {
     "publicKey": "KirzUxWqm3KERiTX5P3uKQErrcmttEczefaR2vTHhh4=",

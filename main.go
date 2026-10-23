@@ -150,16 +150,26 @@ func (s *app) view(c *ui.Context) {
 
 	ui.Column(c).Fill().Background(t.Background).Padding(16).Gap(12).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
-			brand := ui.Column(c.Key("update-check")).Grow(1).Gap(2).
-				Focusable().
-				Role(ui.RoleButton).
-				Label("检查 Mote 更新").
-				Description("点击从 GitHub 检查并安装新版本").
-				Tooltip("检查更新").
-				Cursor(ui.CursorPointer)
-			brand.Children(func() {
+			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				ui.Row(c).AlignItems(ui.Center).Gap(7).Children(func() {
-					ui.Text(c, "Mote").Font("New York").FontSize(20).Bold()
+					brand := ui.Text(c.Key("update-check"), "Mote").
+						Font("New York").
+						FontSize(20).
+						Bold().
+						Focusable().
+						Role(ui.RoleButton).
+						Label("检查 Mote 更新").
+						Description("点击从 GitHub 检查并安装新版本").
+						Tooltip("检查更新").
+						Cursor(ui.CursorPointer)
+					pose := ui.Pose{}
+					if brand.Pressed() {
+						pose.Scale = 0.97
+					}
+					brand.AnimatePose(pose, ui.Animation{Duration: 120 * time.Millisecond, Ease: ui.EaseOut})
+					if brand.Clicked() || brand.Shortcut(0, ui.KeyEnter) || brand.Shortcut(0, ui.KeySpace) {
+						s.checkForUpdate()
+					}
 					if s.updatePhase != updateIdle {
 						ui.Spinner(c).Size(12, 12).TextColor(t.TextMuted).Label("正在更新 Mote")
 					}
@@ -171,14 +181,6 @@ func (s *app) view(c *ui.Context) {
 				ui.Text(c, detail).FontSize(11).TextColor(t.TextMuted).
 					ContentTransition(ui.ContentTransition{Numeric: true, Animation: &ui.Animation{Duration: 140 * time.Millisecond, Ease: ui.EaseOut}})
 			})
-			pose := ui.Pose{}
-			if brand.Pressed() {
-				pose.Scale = 0.97
-			}
-			brand.AnimatePose(pose, ui.Animation{Duration: 120 * time.Millisecond, Ease: ui.EaseOut})
-			if brand.Clicked() || brand.Shortcut(0, ui.KeyEnter) || brand.Shortcut(0, ui.KeySpace) {
-				s.checkForUpdate()
-			}
 			ui.Tabs(c.Key("section"), &s.section, "记录", "专注").
 				Label("Mote 功能")
 		})
